@@ -1,16 +1,10 @@
 #!/bin/bash
 
-# 高速新VPN协议WireGuard服务端一键脚本
-# GCP香港  和 Vutrl 测试可行，  gcp默认网卡eth0  ，Vutrl默认网卡 ens3，要修改服务端配置
-# OpenVZ不能用
 
-# Windows TunSafe版客户端
-# https://tunsafe.com/download
+SUBNET=10.0.0
+################
 
-# Debian9  安装 WireGuard 步骤
-# 详细参考逗比  https://doub.io/wg-jc1/
-
-# Debian 默认往往都没有 linux-headers 内核，而安装使用 WireGuard 必须要
+umask 077
 
 # 更新软件包源
 apt update
@@ -21,7 +15,6 @@ apt install linux-headers-$(uname -r) -y
 # Debian9 安装后内核列表
 dpkg -l|grep linux-headers
 
-
 # 安装WireGuard
 
 # 添加 unstable 软件包源，以确保安装版本是最新的
@@ -31,56 +24,57 @@ echo -e 'Package: *\nPin: release a=unstable\nPin-Priority: 150' > /etc/apt/pref
 # 更新一下软件包源
 apt update
  
-# 开始安装 WireGuard ，至于 resolvconf 我也不清楚这货具体是干嘛的，但是没有安装这个的系统会报错，但是具体会影响哪里使用我也不清楚，为了保险点不出错还是安装吧。一般 Debian9 都自带了。
-apt install wireguard resolvconf -y
+# 开始安装 WireGuard
+apt install -y wireguard resolvconf dnsutils
 
 # 验证是否安装成功
 modprobe wireguard && lsmod | grep wireguard
 
-
-# 配置步骤 WireGuard服务端
+# 配置 WireGuard服务端
 
 # 首先进入配置文件目录
+wg-quick down wg0 2>/dev/null
 mkdir -p /etc/wireguard
+rm -rf /etc/wireguard/*
 cd /etc/wireguard
 
 # 然后开始生成 密匙对(公匙+私匙)。
-wg genkey | tee sprivatekey | wg pubkey > spublickey
-wg genkey | tee cprivatekey | wg pubkey > cpublickey
-
+wg genkey | tee server_priv | wg pubkey > server_pub
+wg genkey | tee client_priv | wg pubkey > client_pub
 
 # 获得服务器ip
-serverip=$(curl -4 icanhazip.com)
+SERVER_PUBLIC_IP=$(curl ipinfo.io/ip)
+SERVER_PUBLIC_IP=$(curl ipv4.icanhazip.com)
 
 # 生成服务端配置文件
 
 echo "[Interface]
-# 私匙，自动读取上面刚刚生成的密匙内容
-PrivateKey = $(cat sprivatekey)
+# 私匙，自动读取上面生成的密匙内容
+PrivateKey = $(cat client_priv)
 
-# VPN中本机的内网IP，一般默认即可，除非和你服务器或客户端设备本地网段冲突
+# VPN中的内网IP，一般默认即可，除非和你服务器或客户端设备本地网段冲突
 Address = 10.0.0.1/24 
 
-# 运行 WireGuard 时要执行的 iptables 防火墙规则，用于打开NAT转发之类的。
-# 如果你的服务器主网卡名称不是 eth0 ，那么请修改下面防火墙规则中最后的 eth0 为你的主网卡名称。
+# 运行 WireGuard 时要执行的 iptables 防火墙规则，用于打开NAT转发
+# 如果你的服务器主网卡名称不是 eth0 ，那么请修改下面防火墙规则中最后的 eth0 为你的主网卡名称
 PostUp   = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -A FORWARD -o wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
 
-# 停止 WireGuard 时要执行的 iptables 防火墙规则，用于关闭NAT转发之类的。
-# 如果你的服务器主网卡名称不是 eth0 ，那么请修改下面防火墙规则中最后的 eth0 为你的主网卡名称。
+# 停止 WireGuard 时要执行的 iptables 防火墙规则，用于关闭NAT转发
+# 如果你的服务器主网卡名称不是 eth0 ，那么请修改下面防火墙规则中最后的 eth0 为你的主网卡名称
 PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -D FORWARD -o wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
 
 # 服务端监听端口，可以自行修改
 ListenPort = 9009
 
 # 服务端请求域名解析 DNS
-DNS = 8.8.8.8
+DNS = 1.1.1.1
 
 # 保持默认
 MTU = 1300
 
 [Peer]
 # 公匙，自动读取上面刚刚生成的密匙内容
-PublicKey = $(cat cpublickey)
+PublicKey = $(cat server_priv)
 
 # VPN内网IP范围，一般默认即可，除非和你服务器或客户端设备本地网段冲突
 AllowedIPs = 10.0.0.2/32" > wg0.conf
@@ -90,27 +84,20 @@ AllowedIPs = 10.0.0.2/32" > wg0.conf
 
 echo "[Interface]
 # 私匙，自动读取上面刚刚生成的密匙内容
-PrivateKey = $(cat cprivatekey)
+PrivateKey = $(cat server_priv)
 
 # VPN内网IP范围
 Address = 10.0.0.2/24
 
 # 解析域名用的DNS
-DNS = 8.8.8.8
+DNS = 1.1.1.1
 
 # 保持默认
 MTU = 1300
 
-# Wireguard客户端配置文件加入PreUp,Postdown命令调用批处理文件
-PreUp = start   .\route\routes-up.bat
-PostDown = start  .\route\routes-down.bat
-
-#### 正常使用Tunsafe点击connect就会调用routes-up.bat将国内IP写进系统路由表，断开disconnect则会调用routes-down.bat删除路由表。
-#### 连接成功后可上 http://ip111.cn/ 测试自己的IP。
-
 [Peer]
 # 公匙，自动读取上面刚刚生成的密匙内容
-PublicKey = $(cat spublickey)
+PublicKey = $(cat client_priv)
 
 # 服务器地址和端口，下面的 X.X.X.X 记得更换为你的服务器公网IP，端口根据服务端配置时的监听端口填写
 Endpoint = $serverip:9009
@@ -124,15 +111,13 @@ PersistentKeepalive = 25" > client.conf
 # 再次生成简洁的客户端配置
 echo "
 [Interface]
-PrivateKey = $(cat cprivatekey)
+PrivateKey = $(cat server_priv)
 Address = 10.0.0.2/24
-DNS = 8.8.8.8
+DNS = 1.1.1.1
 MTU = 1300
-PreUp = start   .\route\routes-up.bat
-PostDown = start  .\route\routes-down.bat
 
 [Peer]
-PublicKey = $(cat spublickey)
+PublicKey = $(cat client_priv)
 Endpoint = $serverip:9009
 AllowedIPs = 0.0.0.0/0, ::0/0
 PersistentKeepalive = 25
