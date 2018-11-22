@@ -46,7 +46,6 @@ wg genkey | tee client_priv | wg pubkey > client_pub
 # 获得服务器ip
 SERVER_PUBLIC_IP=$(curl ipinfo.io/ip)
 SERVER_PUBLIC_IP=$(curl ipv4.icanhazip.com)
-PORT=$(rand 10000 60000)
 
 # 生成服务端配置文件
 
@@ -66,6 +65,7 @@ PostUp   = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -A FORWARD -o wg0 -j A
 PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -D FORWARD -o wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
 
 # 服务端监听端口，可以自行修改
+PORT=$(rand 10000 60000)
 ListenPort = $PORT
 
 # 服务端请求域名解析 DNS
