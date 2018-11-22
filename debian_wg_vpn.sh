@@ -43,74 +43,47 @@ cd /etc/wireguard
 wg genkey | tee server_priv | wg pubkey > server_pub
 wg genkey | tee client_priv | wg pubkey > client_pub
 
+echo $SUBNET > /etc/wireguard/subnet
+
+PORT=$(rand 10000 60000)
+	
+	SERVER_PUB=$(cat server_pub)
+	SERVER_PRIV=$(cat server_priv)
+	CLIENT_PUB=$(cat client_pub)
+CLIENT_PRIV=$(cat client_priv)
+
+echo $SERVER_PUB > /etc/wireguard/server_pubkey
+
 # 获得服务器ip
 SERVER_PUBLIC_IP=$(curl ipinfo.io/ip)
-SERVER_PUBLIC_IP=$(curl ipv4.icanhazip.com)
 
 # 生成服务端配置文件
 
 echo "[Interface]
-# 私匙，读取上面生成的密匙内容
 PrivateKey = $(cat server_priv)
-
-# VPN中的内网IP，一般默认即可，除非和你服务器或客户端设备本地网段冲突
 Address = 10.0.0.1/24 
-
-# 运行 WireGuard 时要执行的 iptables 防火墙规则，用于打开NAT转发
-# 如果你的服务器主网卡名称不是 eth0 ，那么请修改下面防火墙规则中最后的 eth0 为你的主网卡名称
 PostUp   = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -A FORWARD -o wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
-
-# 停止 WireGuard 时要执行的 iptables 防火墙规则，用于关闭NAT转发
-# 如果你的服务器主网卡名称不是 eth0 ，那么请修改下面防火墙规则中最后的 eth0 为你的主网卡名称
 PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -D FORWARD -o wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
-
-# 服务端监听端口，可以自行修改
-PORT=$(rand 10000 60000)
 ListenPort = $PORT
-
-# 服务端请求域名解析 DNS
 DNS = 1.1.1.1
-
-# 保持默认
 MTU = 1300
 
 [Peer]
-# 公匙，自动读取上面刚刚生成的密匙内容
 PublicKey = $(cat client_pub)
-
-# VPN内网IP范围，一般默认即可，除非和你服务器或客户端设备本地网段冲突
 AllowedIPs = 10.0.0.2/32" > wg0.conf
-
 
 # 生成客户端配置文件
 
 echo "[Interface]
-# 私匙，自动读取上面刚刚生成的密匙内容
 PrivateKey = $(cat client_priv)
-
-# VPN内网IP范围
 Address = 10.0.0.2/24
-
-# 解析域名用的DNS
 DNS = 1.1.1.1
-
-# 保持默认
 MTU = 1300
 
 [Peer]
-# 公匙，自动读取上面刚刚生成的密匙内容
 PublicKey = $(cat server_pub)
-
-# 服务器地址和端口，下面的 X.X.X.X 记得更换为你的服务器公网IP，端口根据服务端配置时的监听端口填写
 Endpoint = $serverip:50000
-
-# 转发流量的IP范围，下面这个代表所有流量都走VPN
 AllowedIPs = 0.0.0.0/0, ::0/0
-
-# 保持连接，如果客户端或服务端是 NAT 网络(比如国内大多数家庭宽带没有公网IP，都是NAT)
-# 那么就需要添加这个参数定时链接服务端(单位：秒)，如果你的服务器和你本地都不是 NAT 网络
-# 那么建议不使用该参数（设置为0，或客户端配置文件中删除这行）
-# 保持连接
 PersistentKeepalive = 25"|sed '/^#/d;/^\s*$/d' > client.conf
 
 # 再次生成简洁的客户端配置
