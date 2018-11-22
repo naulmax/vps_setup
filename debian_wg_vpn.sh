@@ -1,6 +1,7 @@
 #!/bin/bash
 
 
+
 SUBNET=10.0.0
 ################
 
@@ -45,12 +46,13 @@ wg genkey | tee client_priv | wg pubkey > client_pub
 # 获得服务器ip
 SERVER_PUBLIC_IP=$(curl ipinfo.io/ip)
 SERVER_PUBLIC_IP=$(curl ipv4.icanhazip.com)
+PORT=$(rand 10000 60000)
 
 # 生成服务端配置文件
 
 echo "[Interface]
-# 私匙，自动读取上面生成的密匙内容
-PrivateKey = $(cat client_priv)
+# 私匙，读取上面生成的密匙内容
+PrivateKey = $(cat server_priv)
 
 # VPN中的内网IP，一般默认即可，除非和你服务器或客户端设备本地网段冲突
 Address = 10.0.0.1/24 
@@ -64,7 +66,7 @@ PostUp   = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -A FORWARD -o wg0 -j A
 PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -D FORWARD -o wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
 
 # 服务端监听端口，可以自行修改
-ListenPort = 9009
+ListenPort = $PORT
 
 # 服务端请求域名解析 DNS
 DNS = 1.1.1.1
@@ -74,7 +76,7 @@ MTU = 1300
 
 [Peer]
 # 公匙，自动读取上面刚刚生成的密匙内容
-PublicKey = $(cat server_priv)
+PublicKey = $(cat client_pub)
 
 # VPN内网IP范围，一般默认即可，除非和你服务器或客户端设备本地网段冲突
 AllowedIPs = 10.0.0.2/32" > wg0.conf
@@ -84,7 +86,7 @@ AllowedIPs = 10.0.0.2/32" > wg0.conf
 
 echo "[Interface]
 # 私匙，自动读取上面刚刚生成的密匙内容
-PrivateKey = $(cat server_priv)
+PrivateKey = $(cat client_priv)
 
 # VPN内网IP范围
 Address = 10.0.0.2/24
@@ -97,16 +99,19 @@ MTU = 1300
 
 [Peer]
 # 公匙，自动读取上面刚刚生成的密匙内容
-PublicKey = $(cat client_priv)
+PublicKey = $(cat server_pub)
 
 # 服务器地址和端口，下面的 X.X.X.X 记得更换为你的服务器公网IP，端口根据服务端配置时的监听端口填写
-Endpoint = $serverip:9009
+Endpoint = $serverip:50000
 
 # 转发流量的IP范围，下面这个代表所有流量都走VPN
 AllowedIPs = 0.0.0.0/0, ::0/0
 
-# 保持连接（具体我也不清楚）
-PersistentKeepalive = 25" > client.conf
+# 保持连接，如果客户端或服务端是 NAT 网络(比如国内大多数家庭宽带没有公网IP，都是NAT)
+# 那么就需要添加这个参数定时链接服务端(单位：秒)，如果你的服务器和你本地都不是 NAT 网络
+# 那么建议不使用该参数（设置为0，或客户端配置文件中删除这行）
+# 保持连接
+PersistentKeepalive = 25"|sed '/^#/d;/^\s*$/d' > client.conf
 
 # 再次生成简洁的客户端配置
 echo "
@@ -126,6 +131,18 @@ PersistentKeepalive = 25
 
 # 赋予配置文件夹权限
 chmod 777 -R /etc/wireguard
+
+sysctl_config() {
+    sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
+    sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
+    echo "net.core.default_qdisc = fq" >> /etc/sysctl.conf
+    echo "net.ipv4.tcp_congestion_control = bbr" >> /etc/sysctl.conf
+    sysctl -p >/dev/null 2>&1
+}
+
+# 开启 BBR
+sysctl_config
+lsmod | grep bbr
  
 # 打开防火墙转发功能
 echo 1 > /proc/sys/net/ipv4/ip_forward
