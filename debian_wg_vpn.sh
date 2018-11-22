@@ -56,12 +56,13 @@ PORT=$(rand 10000 60000)
 
 # 获得服务器ip
 SERVER_PUBLIC_IP=$(curl ipinfo.io/ip)
+SERVER_PUBLIC_IP=$(curl ipv4.icanhazip.com)
 
 # 生成服务端配置文件
 
 echo "[Interface]
-PrivateKey = $(cat server_priv)
-Address = 10.0.0.1/24 
+PrivateKey = $SERVER_PRIV
+Address = $SUBNET.1/24
 PostUp   = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -A FORWARD -o wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
 PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -D FORWARD -o wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
 ListenPort = $PORT
@@ -69,38 +70,25 @@ DNS = 1.1.1.1
 MTU = 1300
 
 [Peer]
-PublicKey = $(cat client_pub)
-AllowedIPs = 10.0.0.2/32" > wg0.conf
+PublicKey = $CLIENT_PUB
+AllowedIPs = $SUBNET.2/32
+EOF
 
+cat > client.conf <<-EOF
 # 生成客户端配置文件
-
 echo "[Interface]
-PrivateKey = $(cat client_priv)
-Address = 10.0.0.2/24
+PrivateKey = $CLIENT_PRIV
+Address = $ip/32
 DNS = 1.1.1.1
 MTU = 1300
 
 [Peer]
-PublicKey = $(cat server_pub)
-Endpoint = $serverip:50000
+PublicKey = $SERVER_PUB
+Endpoint = $SERVER_PUBLIC_IP:$PORT
 AllowedIPs = 0.0.0.0/0, ::0/0
 PersistentKeepalive = 25"|sed '/^#/d;/^\s*$/d' > client.conf
 
-# 再次生成简洁的客户端配置
-echo "
-[Interface]
-PrivateKey = $(cat server_priv)
-Address = 10.0.0.2/24
-DNS = 1.1.1.1
-MTU = 1300
-
-[Peer]
-PublicKey = $(cat client_priv)
-Endpoint = $serverip:9009
-AllowedIPs = 0.0.0.0/0, ::0/0
-PersistentKeepalive = 25
-
-" > client.conf
+EOF
 
 # 赋予配置文件夹权限
 chmod 777 -R /etc/wireguard
@@ -124,7 +112,7 @@ sysctl -p
 
 # 启动WireGuard
 wg-quick save wg0
-wg-quick ip wg0
+wg-quick up wg0
 
 # 设置开机启动
 systemctl enable wg-quick@wg0
