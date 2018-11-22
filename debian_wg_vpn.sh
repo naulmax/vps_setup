@@ -150,7 +150,8 @@ echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.conf
 sysctl -p
 
 # 启动WireGuard
-wg-quick up wg0
+wg-quick save wg0
+wg-quick ip wg0
 
 # 设置开机启动
 systemctl enable wg-quick@wg0
