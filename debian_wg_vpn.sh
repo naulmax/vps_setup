@@ -45,14 +45,14 @@ wg genkey | tee client_priv | wg pubkey > client_pub
 
 echo $SUBNET > /etc/wireguard/subnet
 
-PORT=$(rand 10000 60000)
-	
-	SERVER_PUB=$(cat server_pub)
-	SERVER_PRIV=$(cat server_priv)
-	CLIENT_PUB=$(cat client_pub)
+SERVER_PUB=$(cat server_pub)
+SERVER_PRIV=$(cat server_priv)
+CLIENT_PUB=$(cat client_pub)
 CLIENT_PRIV=$(cat client_priv)
 
 echo $SERVER_PUB > /etc/wireguard/server_pubkey
+
+PORT=$(rand 10000 60000)
 
 # 获得服务器ip
 SERVER_PUBLIC_IP=$(curl ipinfo.io/ip)
